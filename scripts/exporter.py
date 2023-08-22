@@ -70,14 +70,16 @@ class ExportPointCloud(Exporter):
     """Number of rays to evaluate per batch. Decrease if you run out of memory."""
     std_ratio: float = 10.0
     """Threshold based on STD of the average distances across the point cloud to remove outliers."""
+    progress_key: str = "nerf_studio:export_point_cloud"
+    """点云导出进度，redis缓存键"""
 
-    def main(self) -> None:
+    def main(self) -> str:
         """Export point cloud."""
 
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True)
 
-        _, pipeline, _, _ = eval_setup(self.load_config)
+        _, pipeline, _, _ = eval_setup(self.load_config, progress_key=self.progress_key)
 
         # Increase the batchsize to speed up the evaluation.
         pipeline.datamanager.train_pixel_sampler.num_rays_per_batch = self.num_rays_per_batch
@@ -94,6 +96,7 @@ class ExportPointCloud(Exporter):
             bounding_box_min=self.bounding_box_min,
             bounding_box_max=self.bounding_box_max,
             std_ratio=self.std_ratio,
+            progress_key=self.progress_key,
         )
         torch.cuda.empty_cache()
 
@@ -106,6 +109,7 @@ class ExportPointCloud(Exporter):
         o3d.t.io.write_point_cloud(str(self.output_dir / "point_cloud.ply"), tpcd)
         print("\033[A\033[A")
         CONSOLE.print("[bold green]:white_check_mark: Saving Point Cloud")
+        return str(self.output_dir / "point_cloud.ply")
 
 
 @dataclass
@@ -350,7 +354,7 @@ class ExportMarchingCubesMesh(Exporter):
         CONSOLE.print("Extracting mesh with marching cubes... which may take a while")
 
         assert (
-            self.resolution % 512 == 0
+                self.resolution % 512 == 0
         ), f"""resolution must be divisible by 512, got {self.resolution}.
         This is important because the algorithm uses a multi-resolution approach
         to evaluate the SDF where the mimimum resolution is 512."""

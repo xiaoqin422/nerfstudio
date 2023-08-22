@@ -42,7 +42,11 @@ from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.data.datasets.base_dataset import InputDataset
 from nerfstudio.pipelines.base_pipeline import Pipeline, VanillaPipeline
 from nerfstudio.utils.rich_utils import ItersPerSecColumn
-
+from nerfstudio.utils.redis_utils import (
+    redis_client,
+    NerfStudioProcess,
+    cache_process
+)
 CONSOLE = Console(width=120)
 
 
@@ -95,6 +99,7 @@ def generate_point_cloud(
     bounding_box_min: Tuple[float, float, float] = (-1.0, -1.0, -1.0),
     bounding_box_max: Tuple[float, float, float] = (1.0, 1.0, 1.0),
     std_ratio: float = 10.0,
+    progress_key: str = "",
 ) -> o3d.geometry.PointCloud:
     """Generate a point cloud from a nerf.
 
@@ -110,13 +115,15 @@ def generate_point_cloud(
         bounding_box_min: Minimum of the bounding box.
         bounding_box_max: Maximum of the bounding box.
         std_ratio: Threshold based on STD of the average distances across the point cloud to remove outliers.
-
+        progress_key: 进度缓存key
     Returns:
         Point cloud.
     """
 
     # pylint: disable=too-many-statements
 
+    nerf_progress = NerfStudioProcess(status="start", steps="export", total=num_points, processed=0, expect_time=0)
+    cache_process(redis_client, progress_key, nerf_progress)
     progress = Progress(
         TextColumn(":cloud: Computing Point Cloud :cloud:"),
         BarColumn(),
@@ -174,6 +181,12 @@ def generate_point_cloud(
             if normal_output_name is not None:
                 normals.append(normal)
             progress.advance(task, point.shape[0])
+            nerf_progress.__setattr__("processed", progress.tasks[task].completed)
+            nerf_progress.__setattr__("expect_time", progress.tasks[task].time_remaining)
+            cache_process(redis_client, progress_key, nerf_progress)
+
+    nerf_progress.__setattr__("status", "done")
+    cache_process(redis_client, progress_key, nerf_progress)
     points = torch.cat(points, dim=0)
     rgbs = torch.cat(rgbs, dim=0)
 

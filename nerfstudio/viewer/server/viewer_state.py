@@ -95,13 +95,16 @@ class ViewerState:
         self.log_filename = log_filename
         self.datapath = datapath.parent if datapath.is_file() else datapath
 
+        # 如果websocket端口没有预先设置，从默认端口开始寻找可用的端口
         if self.config.websocket_port is None:
             websocket_port = viewer_utils.get_free_port(default_port=self.config.websocket_port_default)
         else:
             websocket_port = self.config.websocket_port
         self.log_filename.parent.mkdir(exist_ok=True)
 
+        # 通过版本号构建前端可以访问的url
         self.viewer_url = viewer_utils.get_viewer_url(websocket_port)
+        # 控制台表格显示输出
         table = Table(
             title=None,
             show_header=False,
@@ -122,6 +125,7 @@ class ViewerState:
 
         self.camera_message = None
 
+        # 启动后台server
         self.viser_server = ViserServer(host=config.websocket_host, port=websocket_port)
 
         self.viser_server.register_handler(TrainingStateMessage, self._handle_training_state_message)

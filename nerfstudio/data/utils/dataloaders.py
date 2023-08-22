@@ -33,6 +33,7 @@ from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.data.datasets.base_dataset import InputDataset
 from nerfstudio.data.utils.nerfstudio_collate import nerfstudio_collate
 from nerfstudio.utils.misc import get_dict_to_torch
+from nerfstudio.utils.redis_utils import NerfStudioProcess, cache_process, redis_client
 
 CONSOLE = Console(width=120)
 
@@ -49,6 +50,9 @@ class CacheDataloader(DataLoader):
         collate_fn: The function we will use to collate our training data
     """
 
+    process_key: str = ""
+    step: str = ""
+
     def __init__(
         self,
         dataset: Dataset,
@@ -59,6 +63,13 @@ class CacheDataloader(DataLoader):
         **kwargs,
     ):
         self.dataset = dataset
+        if "process_key" in kwargs:
+            self.process_key = kwargs.get("process_key", "nerf_studio_load_data_process")
+            del kwargs["process_key"]
+        if "step" in kwargs:
+            self.step = kwargs.get("step", "")
+            del kwargs["step"]
+
         super().__init__(dataset=dataset, **kwargs)  # This will set self.dataset
         self.num_times_to_repeat_images = num_times_to_repeat_images
         self.cache_all_images = (num_images_to_sample_from == -1) or (num_images_to_sample_from >= len(self.dataset))
@@ -98,6 +109,9 @@ class CacheDataloader(DataLoader):
         batch_list = []
         results = []
 
+        progress = NerfStudioProcess(status="start", steps=self.step, total=len(indices), processed=0)
+        cache_process(redis_client, self.process_key, progress)
+
         num_threads = int(self.num_workers) * 4
         num_threads = min(num_threads, multiprocessing.cpu_count() - 1)
         num_threads = max(num_threads, 1)
@@ -109,7 +123,12 @@ class CacheDataloader(DataLoader):
 
             for res in track(results, description="Loading data batch", transient=True):
                 batch_list.append(res.result())
+                progress.__setattr__("status", "doing")
+                progress.__setattr__("processed", len(batch_list))
+                cache_process(redis_client, self.process_key, progress)
 
+        progress.__setattr__("status", "done")
+        cache_process(redis_client, self.process_key, progress)
         return batch_list
 
     def _get_collated_batch(self):

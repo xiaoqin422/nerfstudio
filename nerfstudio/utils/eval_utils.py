@@ -70,6 +70,7 @@ def eval_setup(
     config_path: Path,
     eval_num_rays_per_chunk: Optional[int] = None,
     test_mode: Literal["test", "val", "inference"] = "test",
+    progress_key: str = "nerf_studio:eval_setup_data",
 ) -> Tuple[TrainerConfig, Pipeline, Path, int]:
     """Shared setup for loading a saved pipeline for evaluation.
 
@@ -80,7 +81,7 @@ def eval_setup(
             'val': loads train/val datasets into memory
             'test': loads train/test dataset into memory
             'inference': does not load any dataset into memory
-
+        progress_key: 数据加载进度
 
     Returns:
         Loaded config, pipeline module, corresponding checkpoint, and step
@@ -99,6 +100,9 @@ def eval_setup(
 
     # setup pipeline (which includes the DataManager)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # 设置缓存值
+    config.pipeline.datamanager.set_progress_key(progress_key)
+    # 进度加载
     pipeline = config.pipeline.setup(device=device, test_mode=test_mode)
     assert isinstance(pipeline, Pipeline)
     pipeline.eval()
