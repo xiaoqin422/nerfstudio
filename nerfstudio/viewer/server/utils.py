@@ -14,17 +14,17 @@
 
 """Generic utility functions
 """
-
-from typing import Callable, List, Optional, Tuple
+import math
+from typing import Callable, List, Optional, Tuple, Dict
 
 import numpy as np
 import torch
 
-from nerfstudio.viewer.viser.messages import CameraMessage
+from nerfstudio.viewer.viser.messages import CameraMessage, PositionMessage
 
 
 def get_chunks(
-    lst: List[float], num_chunks: Optional[int] = None, size_of_chunk: Optional[int] = None
+        lst: List[float], num_chunks: Optional[int] = None, size_of_chunk: Optional[int] = None
 ) -> List[List[float]]:
     """Returns list of n elements, containing a sublist.
 
@@ -41,7 +41,7 @@ def get_chunks(
         size = size_of_chunk
     chunks = []
     for i in range(0, len(lst), size):
-        chunks.append(lst[i : i + size])
+        chunks.append(lst[i: i + size])
     return chunks
 
 
@@ -61,7 +61,7 @@ def three_js_perspective_camera_focal_length(fov: float, image_height: int):
 
 
 def get_intrinsics_matrix_and_camera_to_world_h(
-    camera_message: CameraMessage, image_height: int, image_width: Optional[int] = None
+        camera_message: CameraMessage, image_height: int, image_width: Optional[int] = None
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Returns the camera intrinsics matrix and the camera to world homogeneous matrix.
 

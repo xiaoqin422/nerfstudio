@@ -99,7 +99,7 @@ class ViewerState:
         if self.config.websocket_port is None:
             websocket_port = viewer_utils.get_free_port(default_port=self.config.websocket_port_default)
         else:
-            websocket_port = self.config.websocket_port
+            websocket_port = viewer_utils.get_free_port(self.config.websocket_port)
         self.log_filename.parent.mkdir(exist_ok=True)
 
         # 通过版本号构建前端可以访问的url
@@ -191,7 +191,7 @@ class ViewerState:
 
     def _handle_training_state_message(self, message: NerfstudioMessage) -> None:
         """Handle training state message from viewer."""
-        assert isinstance(message, TrainingStateMessage)
+        print("_handle_training_state_message 调用", {message.__str__()})
         self.train_btn_state = message.training_state
         self.training_state = message.training_state
         self.viser_server.set_training_state(message.training_state)
@@ -199,12 +199,14 @@ class ViewerState:
     def _handle_save_checkpoint(self, message: NerfstudioMessage) -> None:
         """Handle save checkpoint message from viewer."""
         assert isinstance(message, SaveCheckpointMessage)
+        print("_handle_save_checkpoint 调用", {message.__str__()})
         if self.trainer is not None:
             self.trainer.save_checkpoint(self.step)
 
     def _handle_camera_update(self, message: NerfstudioMessage) -> None:
         """Handle camera update message from viewer."""
         assert isinstance(message, CameraMessage)
+        print("_handle_camera_update 调用", {message.__str__()})
         self.camera_message = message
         if message.is_moving:
             self.render_statemachine.action(RenderAction("move", self.camera_message))
@@ -217,6 +219,7 @@ class ViewerState:
     def _handle_camera_path_option_request(self, message: NerfstudioMessage) -> None:
         """Handle camera path option request message from viewer."""
         assert isinstance(message, CameraPathOptionsRequest)
+        print("_handle_camera_path_option_request 调用", {message.__str__()})
         camera_path_dir = self.datapath / "camera_paths"
         if camera_path_dir.exists():
             all_path_dict = {}
@@ -228,6 +231,7 @@ class ViewerState:
     def _handle_camera_path_payload(self, message: NerfstudioMessage) -> None:
         """Handle camera path payload message from viewer."""
         assert isinstance(message, CameraPathPayloadMessage)
+        print("_handle_camera_path_payload 调用", {message.__str__()})
         camera_path_filename = message.camera_path_filename + ".json"
         camera_path = message.camera_path
         camera_paths_directory = self.datapath / "camera_paths"
@@ -237,6 +241,7 @@ class ViewerState:
     def _handle_crop_params_message(self, message: NerfstudioMessage) -> None:
         """Handle crop parameters message from viewer."""
         assert isinstance(message, CropParamsMessage)
+        print("_handle_crop_params_message 调用", {message.__str__()})
         self.control_panel.crop_viewport = message.crop_enabled
         self.control_panel.background_color = message.crop_bg_color
         center = np.array(message.crop_center)
@@ -249,6 +254,7 @@ class ViewerState:
     def _handle_time_condition_message(self, message: NerfstudioMessage) -> None:
         """Handle time conditioning message from viewer."""
         assert isinstance(message, TimeConditionMessage)
+        print("_handle_time_condition_message 调用", {message.__str__()})
         self.control_panel.time = message.time
 
     @property

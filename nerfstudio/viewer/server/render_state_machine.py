@@ -15,8 +15,10 @@
 """ This file contains the render state machine, which is responsible for deciding when to render the image """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import threading
+from asyncio import Task
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
@@ -80,6 +82,18 @@ class RenderStateMachine(threading.Thread):
         self.interrupt_render_flag = False
         self.daemon = True
         self.output_keys = {}
+        self.stop_flag = threading.Event()
+
+    def stop_render_state(self):
+        # 创建事件循环对象
+        loop = self.viewer.viser_server._ws_server._event_loop
+        loop.stop()
+        self.stop_flag.set()
+        # 停止所有的异步任务
+        tasks = asyncio.all_tasks(loop=loop)
+        for task in tasks:
+            task.cancel()
+        loop.stop()
 
     def action(self, action: RenderAction):
         """Takes an action and updates the state machine
@@ -90,7 +104,7 @@ class RenderStateMachine(threading.Thread):
         if self.next_action is None:
             self.next_action = action
         elif action.action == "step" and (
-            self.state == "low_move" or self.next_action.action in ("move", "static", "rerender")
+                self.state == "low_move" or self.next_action.action in ("move", "static", "rerender")
         ):
             # ignore steps if:
             #  1. we are in low_moving state
@@ -191,7 +205,7 @@ class RenderStateMachine(threading.Thread):
 
     def run(self):
         """Main loop for the render thread"""
-        while True:
+        while not self.stop_flag.is_set():
             self.render_trigger.wait()
             self.render_trigger.clear()
             action = self.next_action

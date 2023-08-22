@@ -23,13 +23,13 @@ nvm install 17.8.0
 ```
 
 Now running `node --version` in the shell should print "v17.8.0".
-Install package.json dependencies and start the client viewer app:
+Install package.json dependencies and start the self viewer app:
 
 ```shell
 yarn install
 ```
 
-## Launch the web client
+## Launch the web self
 
 From the `nerfstudio/viewer/app` folder, run:
 

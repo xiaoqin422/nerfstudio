@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Tuple
+from typing import Any, Tuple, Dict
 
 import viser.infra
 from typing_extensions import Literal, override
@@ -251,3 +251,16 @@ class OutputOptionsMessage(NerfstudioMessage):
 
     options: Any
     """ List of output option strings"""
+
+
+@dataclasses.dataclass
+class PositionMessage(NerfstudioMessage):
+    """位置坐标转换"""
+    matrix: Tuple[
+        float, float, float, float, float, float, float, float, float, float, float, float, float, float, float, float
+    ]
+    """当前相机位置"""
+
+    pose: Dict[str, Dict[str, int]]
+
+    """相机的坐标"""

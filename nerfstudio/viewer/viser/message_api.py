@@ -562,7 +562,6 @@ class MessageApi(abc.ABC):
         # Update state.
         handle_state.value = value
         handle_state.last_updated = time.time()
-
         # Trigger callbacks.
         for cb in handle_state.update_cb:
             cb(GuiHandle(handle_state))
