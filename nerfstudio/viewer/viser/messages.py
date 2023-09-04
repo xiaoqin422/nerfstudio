@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Tuple, Dict
+from typing import Any, Tuple, Dict, Optional
 
 import viser.infra
 from typing_extensions import Literal, override
@@ -144,6 +144,16 @@ class CameraMessage(NerfstudioMessage):
     """ True if the camera is moving, False otherwise """
     timestamp: int
     """JSON computed by the camera class"""
+    client_id: int = None
+    is_render: bool = False
+
+
+@dataclasses.dataclass
+class CameraRenderMessage(NerfstudioMessage):
+    """返回渲染图"""
+
+    media_type: Literal["image/jpeg", "image/png"]
+    base64_data: str
 
 
 @dataclasses.dataclass
@@ -195,7 +205,7 @@ class CameraPathOptionsRequest(NerfstudioMessage):
 
 @dataclasses.dataclass
 class CameraPathsMessage(NerfstudioMessage):
-    """Dictionary of camera paths"""
+    """Dictionary of camera paths 本地的相机json文件消息"""
 
     payload: Any
     """ Dictionary of camera paths """
@@ -251,16 +261,3 @@ class OutputOptionsMessage(NerfstudioMessage):
 
     options: Any
     """ List of output option strings"""
-
-
-@dataclasses.dataclass
-class PositionMessage(NerfstudioMessage):
-    """位置坐标转换"""
-    matrix: Tuple[
-        float, float, float, float, float, float, float, float, float, float, float, float, float, float, float, float
-    ]
-    """当前相机位置"""
-
-    pose: Dict[str, Dict[str, int]]
-
-    """相机的坐标"""

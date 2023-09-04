@@ -1,98 +1,33 @@
+import open3d as o3d
 import numpy as np
-import math
-import random
-from scipy.spatial.transform import Rotation as R
-from pyquaternion import Quaternion
+from open3d import io as o3d_io
+import json
+import copy
+import os
+def transofrm_cloud(cloud_in_path:str, transforam_scale_json_path:str):
+    pcd = o3d_io.read_point_cloud(cloud_in_path)
+    with open(transforam_scale_json_path, "r") as fr:
+        transforam_scale_json = json.load(fr)
+    # transformation = torch.as_tensor(transforam_scale_json["transform"])[None]
+    cloud_out_path = os.path.join(os.path.dirname(cloud_in_path), "transformed_point_cloud.ply")
 
-
-def isRotationMatrix(R):
-    Rt = np.transpose(R)
-    shouldBeIdentity = np.dot(Rt, R)
-    I = np.identity(3, dtype=R.dtype)
-    n = np.linalg.norm(I - shouldBeIdentity)
-    return n < 1e-6
-
-
-def eulerAnglesToRotationMatrix(theta):
-    R_x = np.array([[1, 0, 0],
-                    [0, math.cos(theta[0]), -math.sin(theta[0])],
-                    [0, math.sin(theta[0]), math.cos(theta[0])]
-                    ])
-
-    R_y = np.array([[math.cos(theta[1]), 0, math.sin(theta[1])],
-                    [0, 1, 0],
-                    [-math.sin(theta[1]), 0, math.cos(theta[1])]
-                    ])
-
-    R_z = np.array([[math.cos(theta[2]), -math.sin(theta[2]), 0],
-                    [math.sin(theta[2]), math.cos(theta[2]), 0],
-                    [0, 0, 1]
-                    ])
-
-    R = np.dot(R_z, np.dot(R_y, R_x))
-    return R
-
-
-def rotationMatrixToEulerAngles(R):
-    assert (isRotationMatrix(R))
-    sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-    singular = sy < 1e-6
-
-    if not singular:
-        x = math.atan2(R[2, 1], R[2, 2])
-        y = math.atan2(-R[2, 0], sy)
-        z = math.atan2(R[1, 0], R[0, 0])
-    else:
-        x = math.atan2(-R[1, 2], R[1, 1])
-        y = math.atan2(-R[2, 0], sy)
-        z = 0
-
-    return np.array([x, y, z])
-
-
-def matrix_to_euler(world_matrix):
-    rotation_matrix = world_matrix[:3, :3]
-    translation = world_matrix[:3, 3]
-
-    # 计算旋转的欧拉角表示
-    euler_angles = np.zeros(3)
-    euler_angles[0] = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])  # 绕 x 轴的旋转角度
-    euler_angles[1] = np.arctan2(-rotation_matrix[2, 0],
-                                 np.sqrt(rotation_matrix[2, 1] ** 2 + rotation_matrix[2, 2] ** 2))  # 绕 y 轴的旋转角度
-    euler_angles[2] = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])  # 绕 z 轴的旋转角度
-
-    return euler_angles, translation
-
+    transformation = np.asarray(transforam_scale_json["transform"])
+    # transformation[:, :3] = np.linalg.inv(transformation[:, :3])
+    transformation = np.concatenate([transformation, np.array([[0, 0, 0, 1/transforam_scale_json["scale"]]])], 0)
+    transformation = np.linalg.inv(transformation)
+    # use numpy to scale
+    # points = np.asarray(pcd.pcd_transformed)
+    # centroid
+    # centroid = points.mean(axis=0)
+    # # scale
+    # scaled_points = (points - centroid) * scale_factor + centroidc
+    # update point
+    # pcd_transformed.points = o3d.utility.Vector3dVector(scaled_points)
+    pcd_transformed = copy.deepcopy(pcd)
+    # use open3d to scale and transform
+    pcd_transformed.transform(transformation)
+    # pcd_transformed.scale(scale_factor, center=pcd_transformed.get_center())
+    o3d_io.write_point_cloud(cloud_out_path, pcd_transformed)
 
 if __name__ == '__main__':
-    rot_r = np.array([0.995366, 0.0960471, -0.00467654, 0,
-                      -0.0959702, 0.995278, 0.0145625, 0,
-                      0.00605315, -0.0140462, 0.999883, 0,
-                      0, 0, 0, 1
-                      ])
-
-    # print(matrix_to_euler(
-    #       [0.995366, 0.0960471, -0.00467654, 0,
-    #     -0.0959702, 0.995278, 0.0145625, 0,
-    #     0.00605315, -0.0140462, 0.999883, 0,
-    #     0, 0, 0, 1
-    #       ]))
-
-    rot_r = rot_r.reshape(4, 4)
-
-    rotation_matrix = np.array([[rot_r[0, 0], rot_r[0, 1], rot_r[0, 2]],
-                                [rot_r[1, 0], rot_r[1, 1], rot_r[1, 2]],
-                                [rot_r[2, 0], rot_r[2, 1], rot_r[2, 2]]
-                                ])
-
-    # 输出欧拉角
-    euler = rotationMatrixToEulerAngles(rotation_matrix)
-    print(euler)
-
-    # 输出旋转矩阵
-    rototion_matrix_ret = eulerAnglesToRotationMatrix(euler)
-    print(rototion_matrix_ret)
-
-    # 输出xyz坐标
-    tra = (rot_r[0, 3], rot_r[1, 3], rot_r[2, 3])
-    print(tra)
+    transofrm_cloud("/Users/cybertron/workspace/deepglint/python/nerf_models/poster/pointclouds/5eac86ea-4b1b-11ee-9c28-93e65b946cce.ply", "/Users/cybertron/workspace/deepglint/python/nerf_models/poster/pointclouds/dataparser_transforms.json")

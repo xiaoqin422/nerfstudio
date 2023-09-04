@@ -8,6 +8,7 @@ import json
 import os
 import struct
 import sys
+import uuid
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,7 +58,7 @@ def _render_trajectory_video(
     seconds: float = 5.0,
     output_format: Literal["images", "video"] = "video",
     camera_type: CameraType = CameraType.PERSPECTIVE,
-) -> None:
+) -> List[Any]:
     """Helper function to create a video of the spiral trajectory.
 
     Args:
@@ -76,6 +77,7 @@ def _render_trajectory_video(
     cameras = cameras.to(pipeline.device)
     fps = len(cameras) / seconds
 
+    cameras_path = []
     progress = Progress(
         TextColumn(":movie_camera: Rendering :movie_camera:"),
         BarColumn(),
@@ -132,7 +134,9 @@ def _render_trajectory_video(
                     render_image.append(output_image)
                 render_image = np.concatenate(render_image, axis=1)
                 if output_format == "images":
-                    media.write_image(output_image_dir / f"{camera_idx:05d}.png", render_image)
+                    image_path = output_image_dir / f"{uuid.uuid1()}.png"
+                    media.write_image(image_path, render_image)
+                    cameras_path.append(image_path.__str__())
                 if output_format == "video":
                     if writer is None:
                         render_width = int(render_image.shape[1])
@@ -146,19 +150,20 @@ def _render_trajectory_video(
                         )
                     writer.add_image(render_image)
 
-    table = Table(
-        title=None,
-        show_header=False,
-        box=box.MINIMAL,
-        title_style=style.Style(bold=True),
-    )
-    if output_format == "video":
-        if camera_type == CameraType.EQUIRECTANGULAR:
-            insert_spherical_metadata_into_file(output_filename)
-        table.add_row("Video", str(output_filename))
-    else:
-        table.add_row("Images", str(output_image_dir))
-    CONSOLE.print(Panel(table, title="[bold][green]:tada: Render Complete :tada:[/bold]", expand=False))
+    # table = Table(
+    #     title=None,
+    #     show_header=False,
+    #     box=box.MINIMAL,
+    #     title_style=style.Style(bold=True),
+    # )
+    # if output_format == "video":
+    #     if camera_type == CameraType.EQUIRECTANGULAR:
+    #         insert_spherical_metadata_into_file(output_filename)
+    #     table.add_row("Video", str(output_filename))
+    # else:
+    #     table.add_row("Images", str(output_image_dir))
+    # CONSOLE.print(Panel(table, title="[bold][green]:tada: Render Complete :tada:[/bold]", expand=False))
+    return cameras_path
 
 
 def insert_spherical_metadata_into_file(
@@ -294,7 +299,7 @@ class RenderTrajectory:
     eval_num_rays_per_chunk: Optional[int] = None
     """Specifies number of rays per chunk during eval."""
 
-    def main(self) -> None:
+    def main(self) -> List[Any]:
         """Main function."""
         _, pipeline, _, _ = eval_setup(
             self.load_config,
@@ -306,6 +311,7 @@ class RenderTrajectory:
 
         seconds = self.seconds
         crop_data = None
+
 
         # TODO(ethan): use camera information from parsing args
         if self.traj == "spiral":
@@ -335,7 +341,7 @@ class RenderTrajectory:
         else:
             assert_never(self.traj)
 
-        _render_trajectory_video(
+        return _render_trajectory_video(
             pipeline,
             camera_path,
             output_filename=self.output_path,

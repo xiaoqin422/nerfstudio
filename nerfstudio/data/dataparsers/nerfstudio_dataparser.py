@@ -171,6 +171,7 @@ class Nerfstudio(DataParser):
         No image files found. 
         You should check the file_paths in the transforms.json file to make sure they are correct.
         """
+        # mask 和 depth的数量需要和实际数量一致
         assert len(mask_filenames) == 0 or (
             len(mask_filenames) == len(image_filenames)
         ), """

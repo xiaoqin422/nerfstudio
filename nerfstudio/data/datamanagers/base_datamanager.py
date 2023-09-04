@@ -32,8 +32,9 @@ from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from typing_extensions import Literal
 
+from nerfstudio.cameras import camera_utils
 from nerfstudio.cameras.camera_optimizers import CameraOptimizerConfig
-from nerfstudio.cameras.cameras import CameraType
+from nerfstudio.cameras.cameras import CameraType, Cameras
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.configs.base_config import InstantiateConfig
 from nerfstudio.data.dataparsers.arkitscenes_dataparser import (
@@ -414,8 +415,32 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
         else:
             self.config.data = self.config.dataparser.data
         self.dataparser = self.dataparser_config.setup()
+        if test_mode == "inference":
+            self.dataparser.downscale_factor = 1  # Avoid opening images
         self.includes_time = self.dataparser.includes_time
         self.train_dataparser_outputs = self.dataparser.get_dataparser_outputs(split="train")
+        # cameras = Cameras(
+        #     fx=0.0,
+        #     fy=0.0,
+        #     cx=0.0,
+        #     cy=0.0,
+        #     distortion_params=camera_utils.get_distortion_params(
+        #         k1=0.0,
+        #         k2=0.0,
+        #         k3=0.0,
+        #         k4=0.0,
+        #         p1=0.0,
+        #         p2=0.0,
+        #     ),
+        #     height=1920,
+        #     width=1082,
+        #     camera_to_worlds=[],
+        #     camera_type=CameraType.PERSPECTIVE,
+        # )
+        # self.train_dataparser_outputs = DataparserOutputs(
+        #     image_filenames=[],
+        #     cameras=cameras,
+        # )
 
         self.train_dataset = self.create_train_dataset()
         self.eval_dataset = self.create_eval_dataset()

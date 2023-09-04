@@ -4,15 +4,17 @@ Starts viewer in eval mode.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field, fields
+from multiprocessing.connection import Connection
 from pathlib import Path
-from threading import Thread
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import tyro
 from rich.console import Console
+import torch.multiprocessing as mp
 
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig
@@ -49,6 +51,12 @@ class RunViewer:
     """The websocket port to connect to. If None, find an available port."""
     progress_key: str = "nerf_studio:run_viewer"
     """点云导出进度，redis缓存键"""
+    server_id: Optional[str] = None
+    """服务hash id"""
+    client: Connection = None
+    jpeg_quality: int = 30
+    """图片质量"""
+    viewer_servers: Any = None
 
     def main(self) -> None:
         """Main function."""
@@ -62,6 +70,7 @@ class RunViewer:
         assert self.viewer.num_rays_per_chunk == -1
         config.vis = "viewer"
         config.viewer = self.viewer.as_viewer_config()
+        config.viewer.jpeg_quality = self.jpeg_quality
         config.viewer.num_rays_per_chunk = num_rays_per_chunk
         if self.websocket_port is not None:
             config.viewer.websocket_port = self.websocket_port
@@ -91,6 +100,7 @@ def _start_viewer(runviewer: RunViewer, config: TrainerConfig, pipeline: Pipelin
         datapath=pipeline.datamanager.get_datapath(),
         pipeline=pipeline,
     )
+    runviewer.client.send(viewer_state.websocket_url)
     runviewer.ViewerState = viewer_state
     banner_messages = [f"Viewer at: {viewer_state.viewer_url}"]
     # We don't need logging, but writer.GLOBAL_BUFFER needs to be populated
@@ -104,9 +114,32 @@ def _start_viewer(runviewer: RunViewer, config: TrainerConfig, pipeline: Pipelin
     )
     viewer_state.viser_server.set_training_state("completed")
     viewer_state.update_scene(step=step)
+
     # 后端websocket服务设置domain，启动线程阻塞
-    # while True:
-    #     time.sleep(0.01)
+    count = 30
+    while True:
+        if runviewer.client.poll(1) and runviewer.client.recv() == runviewer.server_id:
+            print("====服务器尝试主动关闭====")
+            if len(viewer_state.viser_server.get_clients()) == 0:
+                with viewer_state.viser_server.client_lock:
+                    runviewer.client.send(True)
+                    runviewer.client.close()
+                    runviewer.viewer_servers.pop(runviewer.server_id)
+                    print("====服务器主动关闭====")
+                    return
+            print("====服务器存在连接，中断关闭====")
+        if viewer_state.viser_server.timeout.is_set():
+            count -= 1
+            print(f"====服务器开始超时{count}检测====")
+            if count <= 0:
+                viewer_state.render_statemachine.stop_render_state()
+                runviewer.client.send(True)
+                runviewer.client.close()
+                runviewer.viewer_servers.pop(runviewer.server_id)
+                print("====服务器超时关闭====")
+                return
+        else:
+            count = 30
 
 
 def entrypoint():

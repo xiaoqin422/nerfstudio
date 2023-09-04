@@ -63,6 +63,7 @@ class Blender(DataParser):
         self.alpha_color = config.alpha_color
 
     def _generate_dataparser_outputs(self, split="train"):
+        print("调用Blender的 _generate_dataparser_outputs")
         if self.alpha_color is not None:
             alpha_color_tensor = get_color(self.alpha_color)
         else:

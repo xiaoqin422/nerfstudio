@@ -31,6 +31,7 @@ from nerfstudio.data.scene_box import SceneBox
 from nerfstudio.models.base_model import Model
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.io import load_from_json
+from nerfstudio.utils.flask_utils import flask_conf
 from nerfstudio.viewer.server.control_panel import ControlPanel
 
 if TYPE_CHECKING:
@@ -55,7 +56,7 @@ def get_viewer_url(websocket_port: int) -> str:
         URL to the viewer
     """
     version = get_viewer_version()
-    websocket_url = f"ws://localhost:{websocket_port}"
+    websocket_url = f"ws://{flask_conf.ip}:{websocket_port}"
     return f"https://viewer.nerf.studio/versions/{version}/?websocket_url={websocket_url}"
 
 

@@ -42,6 +42,7 @@ from nerfstudio.viewer.server.render_state_machine import (
     RenderAction,
     RenderStateMachine,
 )
+from nerfstudio.utils.flask_utils import flask_conf
 from nerfstudio.viewer.server.viewer_elements import ViewerElement
 from nerfstudio.viewer.viser import ViserServer
 from nerfstudio.viewer.viser.messages import (
@@ -54,6 +55,7 @@ from nerfstudio.viewer.viser.messages import (
     TimeConditionMessage,
     TrainingStateMessage,
 )
+from nerfstudio.viewer.viser.server import ClientHandler
 
 if TYPE_CHECKING:
     from nerfstudio.engine.trainer import Trainer
@@ -77,15 +79,17 @@ class ViewerState:
     """
 
     viewer_url: str
+    websocket_url: str
+    server_id: str
 
     def __init__(
-        self,
-        config: cfg.ViewerConfig,
-        log_filename: Path,
-        datapath: Path,
-        pipeline: Pipeline,
-        trainer: Optional[Trainer] = None,
-        train_lock: Optional[threading.Lock] = None,
+            self,
+            config: cfg.ViewerConfig,
+            log_filename: Path,
+            datapath: Path,
+            pipeline: Pipeline,
+            trainer: Optional[Trainer] = None,
+            train_lock: Optional[threading.Lock] = None,
     ):
         self.config = config
         self.trainer = trainer
@@ -101,7 +105,7 @@ class ViewerState:
         else:
             websocket_port = viewer_utils.get_free_port(self.config.websocket_port)
         self.log_filename.parent.mkdir(exist_ok=True)
-
+        self.websocket_url = f"ws://{flask_conf.ip}:{websocket_port}"
         # 通过版本号构建前端可以访问的url
         self.viewer_url = viewer_utils.get_viewer_url(websocket_port)
         # 控制台表格显示输出
@@ -127,10 +131,15 @@ class ViewerState:
 
         # 启动后台server
         self.viser_server = ViserServer(host=config.websocket_host, port=websocket_port)
+        websocket_port = self.viser_server.get_server_port()
+        self.websocket_url = f"ws://{flask_conf.ip}:{websocket_port}"
+        self.viewer_url = viewer_utils.get_viewer_url(websocket_port)
 
+        self.viser_server.register_client_connect_handler(self._register_client_handler)
         self.viser_server.register_handler(TrainingStateMessage, self._handle_training_state_message)
         self.viser_server.register_handler(SaveCheckpointMessage, self._handle_save_checkpoint)
-        self.viser_server.register_handler(CameraMessage, self._handle_camera_update)
+        # 广播client的视图调整
+        # self.viser_server.register_handler(CameraMessage, self._handle_camera_update)
         self.viser_server.register_handler(CameraPathOptionsRequest, self._handle_camera_path_option_request)
         self.viser_server.register_handler(CameraPathPayloadMessage, self._handle_camera_path_payload)
         self.viser_server.register_handler(CropParamsMessage, self._handle_crop_params_message)
@@ -203,11 +212,20 @@ class ViewerState:
         if self.trainer is not None:
             self.trainer.save_checkpoint(self.step)
 
+    def _register_client_handler(self, client: ClientHandler) -> None:
+        client.register_client_handler(CameraMessage, self._client_handle_camera_update)
+
+    def _client_handle_camera_update(self, client_id: int, message: NerfstudioMessage) -> None:
+        message.client_id = client_id
+        self._handle_camera_update(message)
+
     def _handle_camera_update(self, message: NerfstudioMessage) -> None:
         """Handle camera update message from viewer."""
         assert isinstance(message, CameraMessage)
-        print("_handle_camera_update 调用", {message.__str__()})
         self.camera_message = message
+        if message.is_render:
+            self.render_statemachine.camera_render(RenderAction("camera_render", self.camera_message))
+            return
         if message.is_moving:
             self.render_statemachine.action(RenderAction("move", self.camera_message))
             if self.training_state == "training":
@@ -218,6 +236,7 @@ class ViewerState:
 
     def _handle_camera_path_option_request(self, message: NerfstudioMessage) -> None:
         """Handle camera path option request message from viewer."""
+        """发送服务器存储的本地json文件"""
         assert isinstance(message, CameraPathOptionsRequest)
         print("_handle_camera_path_option_request 调用", {message.__str__()})
         camera_path_dir = self.datapath / "camera_paths"
@@ -327,18 +346,18 @@ class ViewerState:
             return
 
         if (
-            self.trainer is not None
-            and self.trainer.training_state == "training"
-            and self.control_panel.train_util != 1
+                self.trainer is not None
+                and self.trainer.training_state == "training"
+                and self.control_panel.train_util != 1
         ):
             if (
-                EventName.TRAIN_RAYS_PER_SEC.value in GLOBAL_BUFFER["events"]
-                and EventName.VIS_RAYS_PER_SEC.value in GLOBAL_BUFFER["events"]
+                    EventName.TRAIN_RAYS_PER_SEC.value in GLOBAL_BUFFER["events"]
+                    and EventName.VIS_RAYS_PER_SEC.value in GLOBAL_BUFFER["events"]
             ):
                 train_s = GLOBAL_BUFFER["events"][EventName.TRAIN_RAYS_PER_SEC.value]["avg"]
                 vis_s = GLOBAL_BUFFER["events"][EventName.VIS_RAYS_PER_SEC.value]["avg"]
                 train_util = self.control_panel.train_util
-                vis_n = self.control_panel.max_res**2
+                vis_n = self.control_panel.max_res ** 2
                 train_n = num_rays_per_batch
                 train_time = train_n / train_s
                 vis_time = vis_n / vis_s

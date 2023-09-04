@@ -1,0 +1,13 @@
+app:
+  ip: 192.168.2.67
+  prot: 7006
+  point_cloud_num_points: 1000000
+
+redis:
+  db: 1
+  host: 192.168.2.68
+  prot: 6379
+  lock_name: nerf_studio_lock
+  nerf_point_cloud_key: nerf_studio:export_point_cloud
+  nerf_viewer_key: nerf_studio:viewer
+  nerf_studio_stop_work_key: nerf_studio_stop

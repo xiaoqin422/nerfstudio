@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -106,10 +107,11 @@ class ExportPointCloud(Exporter):
         # The legacy PLY writer converts colors to UInt8,
         # let us do the same to save space.
         tpcd.point.colors = (tpcd.point.colors * 255).to(o3d.core.Dtype.UInt8)
-        o3d.t.io.write_point_cloud(str(self.output_dir / "point_cloud.ply"), tpcd)
+        pcd_path = f"{self.output_dir}/{uuid.uuid1()}.ply"
+        o3d.t.io.write_point_cloud(pcd_path, tpcd)
         print("\033[A\033[A")
         CONSOLE.print("[bold green]:white_check_mark: Saving Point Cloud")
-        return str(self.output_dir / "point_cloud.ply")
+        return pcd_path
 
 
 @dataclass

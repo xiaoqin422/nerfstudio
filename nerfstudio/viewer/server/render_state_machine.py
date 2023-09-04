@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
-from asyncio import Task
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
@@ -32,12 +31,13 @@ from nerfstudio.utils.writer import GLOBAL_BUFFER, EventName, TimeWriter
 from nerfstudio.viewer.server import viewer_utils
 from nerfstudio.viewer.server.utils import get_intrinsics_matrix_and_camera_to_world_h
 from nerfstudio.viewer.viser.messages import CameraMessage
+from nerfstudio.viewer.viser.server import ClientHandler
 
 if TYPE_CHECKING:
     from nerfstudio.viewer.server.viewer_state import ViewerState
 
 RenderStates = Literal["low_move", "low_static", "high"]
-RenderActions = Literal["rerender", "move", "static", "step"]
+RenderActions = Literal["rerender", "move", "static", "step", "camera_render"]
 
 
 @dataclass
@@ -85,15 +85,17 @@ class RenderStateMachine(threading.Thread):
         self.stop_flag = threading.Event()
 
     def stop_render_state(self):
-        # 创建事件循环对象
-        loop = self.viewer.viser_server._ws_server._event_loop
-        loop.stop()
         self.stop_flag.set()
-        # 停止所有的异步任务
-        tasks = asyncio.all_tasks(loop=loop)
-        for task in tasks:
-            task.cancel()
-        loop.stop()
+        self.viewer.viser_server.close_server()
+
+    def camera_render(self, action: RenderAction):
+        outputs = self._render_img(action.cam_msg)
+        if action.cam_msg.client_id is not None:
+            client = self.viewer.viser_server.get_clients().get(action.cam_msg.client_id)
+            if client is not None:
+                self._send_camera_render_to_client_viewer(client, outputs)
+        else:
+            self._send_camera_render_to_viewer(outputs)
 
     def action(self, action: RenderAction):
         """Takes an action and updates the state machine
@@ -137,7 +139,15 @@ class RenderStateMachine(threading.Thread):
             model=self.viewer.get_model(),
         )
 
-        image_height, image_width = self._calculate_image_res(cam_msg.aspect)
+        if cam_msg.is_render:
+            max_res = self.viewer.control_panel.max_res
+            image_height = max_res
+            image_width = int(image_height * cam_msg.aspect)
+            if image_width > max_res:
+                image_width = max_res
+                image_height = int(image_width / cam_msg.aspect)
+        else:
+            image_height, image_width = self._calculate_image_res(cam_msg.aspect)
 
         intrinsics_matrix, camera_to_world_h = get_intrinsics_matrix_and_camera_to_world_h(
             cam_msg, image_height=image_height, image_width=image_width
@@ -200,7 +210,14 @@ class RenderStateMachine(threading.Thread):
         writer.put_time(
             name=EventName.VIS_RAYS_PER_SEC, duration=num_rays / render_time, step=step, avg_over_steps=True
         )
-        self.viewer.viser_server.send_status_message(eval_res=f"{image_height}x{image_width}px", step=step)
+        if not cam_msg.is_render:
+            if cam_msg.client_id is not None:
+                clients = self.viewer.viser_server.get_clients()
+                client = clients.get(cam_msg.client_id, None)
+                if client is not None:
+                    client.send_status_message(eval_res=f"{image_height}x{image_width}px", step=step)
+            else:
+                self.viewer.viser_server.send_status_message(eval_res=f"{image_height}x{image_width}px", step=step)
         return outputs
 
     def run(self):
@@ -221,7 +238,12 @@ class RenderStateMachine(threading.Thread):
             except viewer_utils.IOChangeException:
                 # if we got interrupted, don't send the output to the viewer
                 continue
-            self._send_output_to_viewer(outputs)
+            if action.cam_msg.client_id is not None:
+                client = self.viewer.viser_server.get_clients().get(action.cam_msg.client_id)
+                if client is not None:
+                    self._send_output_to_client_viewer(client, outputs)
+            else:
+                self._send_output_to_viewer(outputs)
             # if we rendered a static low res, we need to self-trigger a static high-res
             if self.state == "low_static":
                 self.action(RenderAction("static", action.cam_msg))
@@ -258,6 +280,56 @@ class RenderStateMachine(threading.Thread):
             selected_output.cpu().numpy(),
             file_format=self.viewer.config.image_format,
             quality=self.viewer.config.jpeg_quality,
+        )
+
+    def _send_camera_render_to_viewer(self, outputs: Dict[str, Any]):
+        output_render = self.viewer.control_panel.output_render
+        self.viewer.update_colormap_options(
+            dimensions=outputs[output_render].shape[-1], dtype=outputs[output_render].dtype
+        )
+        selected_output = (viewer_utils.apply_colormap(self.viewer.control_panel, outputs) * 255).type(torch.uint8)
+
+        self.viewer.viser_server.send_render_to_client_viewer(
+            selected_output.cpu().numpy(),
+            file_format=self.viewer.config.image_format,
+            quality=self.viewer.config.jpeg_quality,
+        )
+
+    def _send_output_to_client_viewer(self, client: ClientHandler, outputs: Dict[str, Any]):
+        """Chooses the correct output and sends it to the viewer
+
+        Args:
+            outputs: the dictionary of outputs to choose from, from the model
+        """
+        output_keys = set(outputs.keys())
+        if self.output_keys != output_keys:
+            self.output_keys = output_keys
+            self.viewer.viser_server.send_output_options_message(list(outputs.keys()))
+            self.viewer.control_panel.update_output_options(list(outputs.keys()))
+
+        output_render = self.viewer.control_panel.output_render
+        self.viewer.update_colormap_options(
+            dimensions=outputs[output_render].shape[-1], dtype=outputs[output_render].dtype
+        )
+        selected_output = (viewer_utils.apply_colormap(self.viewer.control_panel, outputs) * 255).type(torch.uint8)
+
+        client.set_background_image(
+            selected_output.cpu().numpy(),
+            file_format=self.viewer.config.image_format,
+            quality=self.viewer.config.jpeg_quality,
+        )
+
+    def _send_camera_render_to_client_viewer(self, client: ClientHandler, outputs: Dict[str, Any]):
+        output_render = self.viewer.control_panel.output_render
+        self.viewer.update_colormap_options(
+            dimensions=outputs[output_render].shape[-1], dtype=outputs[output_render].dtype
+        )
+        selected_output = (viewer_utils.apply_colormap(self.viewer.control_panel, outputs) * 255).type(torch.uint8)
+
+        client.send_render_to_client_viewer(
+            selected_output.cpu().numpy(),
+            file_format=self.viewer.config.image_format,
+            quality=int(self.viewer.config.jpeg_quality / 2),
         )
 
     def _calculate_image_res(self, aspect_ratio: float) -> Tuple[int, int]:

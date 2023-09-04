@@ -406,6 +406,15 @@ class MessageApi(abc.ABC):
         media_type, base64_data = _encode_image_base64(image, file_format, quality=quality)
         self._queue(messages.BackgroundImageMessage(media_type=media_type, base64_data=base64_data))
 
+    def send_render_to_client_viewer(
+        self,
+        image: onp.ndarray,
+        file_format: Literal["png", "jpeg"] = "jpeg",
+        quality: Optional[int] = None,
+    ) -> None:
+        media_type, base64_data = _encode_image_base64(image, file_format, quality=quality)
+        self._queue(messages.CameraRenderMessage(media_type=media_type, base64_data=base64_data))
+
     def send_file_path_info(self, config_base_dir: Path, data_base_dir: Path, export_path_name: str) -> None:
         """Send file path info to the scene.
 

@@ -69,7 +69,6 @@ class CacheDataloader(DataLoader):
         if "step" in kwargs:
             self.step = kwargs.get("step", "")
             del kwargs["step"]
-
         super().__init__(dataset=dataset, **kwargs)  # This will set self.dataset
         self.num_times_to_repeat_images = num_times_to_repeat_images
         self.cache_all_images = (num_images_to_sample_from == -1) or (num_images_to_sample_from >= len(self.dataset))
